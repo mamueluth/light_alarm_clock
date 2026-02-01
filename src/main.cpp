@@ -1,53 +1,68 @@
-#include <WiFi.h>
-#include <WebServer.h>
+#include <Arduino.h>
 
-// ====== ACCESS POINT SETTINGS ======
-const char* ap_ssid = "ESP32_AP";
-const char* ap_password = "test123test"; // min 8 chars
+#define SIMULATED_IR_PIN 13
 
-WebServer server(80);
-
-// ====== WEB PAGE HANDLER ======
-void handleRoot() {
-  server.send(
-    200,
-    "text/html",
-    "<!DOCTYPE html>"
-    "<html>"
-    "<head><title>ESP32 AP</title></head>"
-    "<body>"
-    "<h1>Hello from ESP32 (AP Mode)</h1>"
-    "</body>"
-    "</html>"
-  );
-}
+// Constants based on your provided table
+const uint32_t IR_ON    = 0xFC03EF00;
+const uint32_t IR_OFF   = 0xFD02EF00;
+const uint32_t IR_RED   = 0xFB04EF00;
+const uint32_t IR_GREEN = 0xFA05EF00;
+const uint32_t IR_BLUE  = 0xF906EF00;
 
 void setup() {
+  pinMode(SIMULATED_IR_PIN, OUTPUT);
+  digitalWrite(SIMULATED_IR_PIN, HIGH); 
+  
   Serial.begin(115200);
-  delay(1000);
+  Serial.println("Starting IR Signal Simulation...");
+}
 
-  Serial.println();
-  Serial.println("Starting ESP32 Access Point...");
+void transmitPulse(unsigned long lowTime, unsigned long highTime) {
+  digitalWrite(SIMULATED_IR_PIN, LOW);   // Signal detected (Active LOW)
+  delayMicroseconds(lowTime);
+  digitalWrite(SIMULATED_IR_PIN, HIGH);  // Space/Idle
+  delayMicroseconds(highTime);
+}
 
-  // ====== START ACCESS POINT ======
-  WiFi.mode(WIFI_AP);
-  WiFi.softAP(ap_ssid, ap_password);
+void sendNEC(uint32_t rawData) {
+  // Header: 9ms pulse followed by 4.5ms space
+  transmitPulse(9000, 4500);
 
-  IPAddress apIP = WiFi.softAPIP();
+  // 32-bit Data payload (LSB first)
+  for (int i = 0; i < 32; i++) {
+    if (rawData & (1UL << i)) {
+      // Bit 1: 560us pulse, 1680us space
+      transmitPulse(560, 1680);
+    } else {
+      // Bit 0: 560us pulse, 560us space
+      transmitPulse(560, 560);
+    }
+  }
 
-  Serial.println("Access Point started");
-  Serial.print("SSID: ");
-  Serial.println(ap_ssid);
-  Serial.print("IP address: ");
-  Serial.println(apIP);
-
-  // ====== WEB SERVER ======
-  server.on("/", handleRoot);
-  server.begin();
-
-  Serial.println("HTTP server started");
+  // Stop Bit: 560us pulse to terminate the last bit
+  digitalWrite(SIMULATED_IR_PIN, LOW);
+  delayMicroseconds(560);
+  digitalWrite(SIMULATED_IR_PIN, HIGH);
 }
 
 void loop() {
-  server.handleClient();
+  Serial.println("Sending: ON");
+  sendNEC(IR_ON);
+  delay(3000);
+
+  Serial.println("Sending: RED");
+  sendNEC(IR_RED);
+  delay(3000);
+
+  Serial.println("Sending: GREEN");
+  sendNEC(IR_GREEN);
+  delay(3000);
+
+  Serial.println("Sending: BLUE");
+  sendNEC(IR_BLUE);
+  delay(3000);
+
+  Serial.println("Sending: OFF");
+  sendNEC(IR_OFF);
+  delay(3000);
 }
